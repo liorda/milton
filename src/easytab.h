@@ -663,17 +663,10 @@ typedef struct EasyTab_s
     WTMGRDEFCONTEXT   WTMgrDefContext;
     WTMGRDEFCONTEXTEX WTMgrDefContextEx;
 
-
-    LONG OutputOriginX;
-    LONG OutputOriginY;
-
-    LONG OutputExtentX;
-    LONG OutputExtentY;
-
-    LONG ScreenOriginX;
-    LONG ScreenOriginY;
-    LONG ScreenExtentX;
-    LONG ScreenExtentY;
+    LONG SystemOriginX;
+    LONG SystemOriginY;
+    LONG SystemExtentX;
+    LONG SystemExtentY;
 
 #endif // WIN32
 } EasyTabInfo;
@@ -995,20 +988,11 @@ EasyTabResult EasyTab_Load_Ex(HWND Window,
         #ifdef MILTON_EASYTAB
         LogContext.lcPktRate = DesiredPktRate;
         #endif
-		
-        EasyTab->OutputOriginX = LogContext.lcOutOrgX;
-        EasyTab->OutputOriginY = LogContext.lcOutOrgY;
-        EasyTab->OutputExtentX = LogContext.lcOutExtX;
-        EasyTab->OutputExtentY = LogContext.lcOutExtY;
 
-        EasyTab->ScreenOriginX = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        EasyTab->ScreenOriginY = GetSystemMetrics(SM_YVIRTUALSCREEN);
-
-        EasyTab->ScreenExtentX = GetSystemMetrics( SM_CXVIRTUALSCREEN );
-        EasyTab->ScreenExtentY = GetSystemMetrics( SM_CYVIRTUALSCREEN );
-
-        float SysExtX          = LogContext.lcSysExtX;
-        float SysExtY          = LogContext.lcSysExtY;
+        EasyTab->SystemOriginX = LogContext.lcSysOrgX;
+        EasyTab->SystemOriginY = LogContext.lcSysOrgY;
+        EasyTab->SystemExtentX = LogContext.lcSysExtX;
+        EasyTab->SystemExtentY = LogContext.lcSysExtY;
 
         if (TrackingMode == EASYTAB_TRACKING_MODE_RELATIVE)
         {
@@ -1093,31 +1077,23 @@ EasyTabResult EasyTab_HandleEvent(HWND Window, UINT Message, LPARAM LParam, WPAR
     if (Message == WT_PACKET)
     {
         int NumPackets = EasyTab->WTPacketsGet(EasyTab->Context, EASYTAB_PACKETQUEUE_SIZE, PacketBuffer);
-        POINT PointBuffer[EASYTAB_PACKETQUEUE_SIZE] = { 0 };
+        POINT PointBuffer;
 
         if ( NumPackets ) { EasyTab->Buttons = 0; }
         for (int i = 0; i < NumPackets; ++i)
-		{
-			//static char s1[1024]; s1[0] = '\0';
-			//#define P(x, ...) { char t[512]; sprintf_s(t, x, __VA_ARGS__); strcat_s(s1, t); }
-			//P("Packet (%5d,%5d) ", PacketBuffer[i].pkX, PacketBuffer[i].pkY);
-			//P("OutputOrigin (%5d,%5d) ", EasyTab->OutputOriginX, EasyTab->OutputOriginY);
-			//P("OutputExtent (%5d,%5d) ", EasyTab->OutputExtentX, EasyTab->OutputExtentY);
-			PointBuffer[i].x = PacketBuffer[i].pkX;
-			PointBuffer[i].y = EasyTab->OutputExtentY - PacketBuffer[i].pkY; // wintab y axis goes up, windows' y axis goes down!
-			//P("client: (%5d,%5d) ", PointBuffer[i].x, PointBuffer[i].y);
-            ScreenToClient(Window, &PointBuffer[i]);
-            EasyTab->PosX[i] = PointBuffer[i].x;
-            EasyTab->PosY[i] = PointBuffer[i].y;
-			//P("client: (%5d,%5d) ", PointBuffer[i].x, PointBuffer[i].y);
+        {
+            // wintab y axis goes up, windows' y axis goes down!
+            PointBuffer.x = PacketBuffer[i].pkX;
+            PointBuffer.y = EasyTab->SystemExtentY - PacketBuffer[i].pkY;
+
+            ScreenToClient(Window, &PointBuffer);
+            EasyTab->PosX[i] = PointBuffer.x;
+            EasyTab->PosY[i] = PointBuffer.y;
 
             EasyTab->Pressure[i] = (float)PacketBuffer[i].pkNormalPressure / (float)EasyTab->MaxPressure;
 
             // Setting the Buttons variable if any of the packets had a button pushed
-            EasyTab->Buttons |= PacketBuffer[i].pkButtons;
-			
-			//P("%c", '\n');
-			//OutputDebugStringA(s1);
+            EasyTab->Buttons |= PacketBuffer[i].pkButtons;			
         }
 
         // Fill the orientation of the last packet in the buffer.
