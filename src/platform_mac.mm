@@ -4,7 +4,7 @@
 #include <mach-o/dyld.h>
 
 #define Rect MacRect
-#define ALIGN MacALIGN
+// #define ALIGN MacALIGN
 #include <Cocoa/Cocoa.h>
 #undef Rect
 #undef ALIGN
@@ -18,12 +18,62 @@
 #include "platform.h"
 #include "memory.h"
 
+#include <dlfcn.h>
+
 
 #define MAX_PATH PATH_MAX
 
 
 #include <AppKit/AppKit.h>
 
+void
+platform_init(PlatformState* platform, SDL_SysWMinfo* sysinfo)
+{
+
+}
+
+void
+platform_deinit(PlatformState* platform)
+{
+
+}
+
+void
+platform_event_tick()
+{
+}
+
+void
+platform_setup_cursor(Arena* arena, PlatformState* platform)
+{
+
+}
+
+void
+platform_cursor_set_position(PlatformState* platform, v2i pos)
+{
+    // TODO: Implement
+}
+
+v2i
+platform_cursor_get_position(PlatformState* platform)
+{
+    // TODO: Implement
+    return v2i{};
+}
+
+
+void*
+platform_get_gl_proc(char* name)
+{
+    static void* image = NULL;
+
+    if (NULL == image) {
+        image = dlopen("/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL", RTLD_LAZY);
+    }
+    return (image ? dlsym(image, (const char *)name) : NULL);
+
+}
 
 char*
 mac_panel(NSSavePanel *panel, FileKind kind)
@@ -72,6 +122,25 @@ platform_dialog_yesno_mac(char* info, char* title)
     }
 }
 
+YesNoCancelAnswer
+platform_dialog_yesnocancel(char* info, char* title)
+{
+    @autoreleasepool {
+        NSAlert *alert = mac_alert(info, title);
+        [alert addButtonWithTitle:NSLocalizedString(@"Yes", nil)];
+        [alert addButtonWithTitle:NSLocalizedString(@"No", nil)];
+        [alert addButtonWithTitle:NSLocalizedString(@"Cancel", nil)];
+        NSModalResponse result = [alert runModal];
+        if (result == NSAlertFirstButtonReturn) {
+          return YesNoCancelAnswer::YES_;
+        }
+        else if (result == NSAlertSecondButtonReturn) {
+          return YesNoCancelAnswer::NO_;
+        }
+        return YesNoCancelAnswer::CANCEL_;
+    }
+}
+
 char*
 platform_open_dialog_mac(FileKind kind)
 {
@@ -86,6 +155,13 @@ platform_save_dialog_mac(FileKind kind)
     @autoreleasepool {
         return mac_panel([NSSavePanel savePanel], kind);
     }
+}
+
+EasyTabResult
+platform_handle_sysevent(PlatformState* platform, SDL_SysWMEvent* sysevent)
+{
+    mlt_assert(sysevent->msg->subsystem == SDL_SYSWM_COCOA);
+    return EASYTAB_EVENT_NOT_HANDLED;
 }
 
 void
@@ -283,6 +359,7 @@ platform_fopen(const PATH_CHAR* fname, const PATH_CHAR* mode)
     FILE* fd = fopen(fname, mode);
     return fd;
 }
+
 
 b32
 platform_move_file(PATH_CHAR* src, PATH_CHAR* dest)

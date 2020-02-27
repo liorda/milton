@@ -44,75 +44,45 @@ How to Compile
 Windows
 -------
 
-Milton currently supports Visual Studio 2015.
+Milton currently supports Visual Studio 2019.
 
 Other versions of Visual Studio might not work.
 
 To build:
 
-Run `cmd.exe` and type the following
+Run a x64 developer command prompt (for VS 2019 this corresponds to the "x64 Native Tools Command Prompt") and type the following:
 
 ```
 build.bat
 ```
 
-Milton will be compiled to `build\win64-msvc-debug-default\Milton.exe`
-
-Alternatively, to build with clang open build.bat and change the value of
-doUnityClangBuild to 1. It assumes that you have LLVM and the Windows 10 SDK
-installed.
+Milton will be compiled to `build\Milton.exe`
 
 
-Linux
------
-
-Work in progress, but is known to build and run.
-
-### Dependencies
-Use your linux distribution's package manager to install these.
-* X11
-* OpenGL
-* XInput
-* GTK2
-
-### Building
-
-Release build:
-```sh
-./build-lin.sh
-build/Milton
-```
-
-build-lin.sh uses cmake under the hood, and any arguments you pass to it will be passed along to cmake.
-
-Here are some CMake options you might care about:
-
-| flag | type | does |
-| ---- | ---- | ---- |
-| `TRY_GL2` | `bool` | Tells Milton to target OpenGL2.1. Does not guarantee that such a context will be created. This is the default Release target. |
-| `TRY_GL3` | `bool` | Tells Milton to target OpenGL3.2. Does not guarantee that such a context will be created. This is the default Debug target. |
-| `CMAKE_BUILD_TYPE` | `string` | Configures the build type. Defaults to `Release`. Available build types are: `Release` and `Debug`. |
+This repo provides a binary SDL.lib that was compiled by running
+`build_deps.bat` in the `third_party` directory.
 
 
-Example debug build using GL2.1:
-`./build-lin.sh -DCMAKE_BUILD_TYPE=Debug -DTRY_GL2=1`
+Linux and macOS
+---------------
 
-OSX
----
+As of 2018-10-24, linux and mac are not officially supported. I (Sergio) would like to support them again but my efforts are currently going into producing a new release for Windows. You can try and compile with the included scripts, but things will likely not work!
 
-Work in progress.
 
-### Building
-`./setup_osx.sh`
+Versioning scheme
+=================
 
-If you run into troubles building on OSX, please try to submit a pull request if possible.
+Milton uses a MAJOR.MINOR.PATCH versioning scheme, where MAJOR keeps track of very significant changes, such as a UI overhaul. MINOR keeps track of binary file format compatibility. PATCH is incremented for new releases that do not break file format compatibility. PATCH version gets reset to 0 when the MINOR version increases.
+
+For example, Milton version 1.3.1 can read mlt files produced any previous version, but it can't read files produced by 1.4.0
+
 
 License
 =======
 
     Milton
 
-    Copyright (C) 2015 - 2017 Sergio Gonzalez
+    Copyright (C) 2015 - 2018 Sergio Gonzalez
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by

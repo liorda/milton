@@ -119,7 +119,9 @@ struct MiltonGui
 
     f32 scale;
 
-    MiltonSettings* modified_settings;
+    MiltonSettings* original_settings;
+
+    char scratch_binding_key[Action_COUNT][2];
 };
 
 //
@@ -133,13 +135,12 @@ void milton_imgui_tick(MiltonInput* input, PlatformState* platform_state,  Milto
 
 //
 void                gui_init(Arena* root_arena, MiltonGui* gui, f32 scale);
-void                gui_toggle_visibility(Milton* milton);
 void                gui_toggle_menu_visibility(MiltonGui* gui);
 void                gui_toggle_help(MiltonGui* gui);
 v3f                 gui_get_picker_rgb(MiltonGui* gui);
 
 // Returns true if the GUI consumed input. False if the GUI wasn't affected
-b32                 gui_consume_input(MiltonGui* gui, MiltonInput* input);
+b32                 gui_consume_input(MiltonGui* gui, MiltonInput const* input);
 void                gui_imgui_set_ungrabbed(MiltonGui* gui);
 void                gui_picker_from_rgb(ColorPicker* picker, v3f rgb);
 

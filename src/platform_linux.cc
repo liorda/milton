@@ -9,6 +9,8 @@
 #define IMPL_MISSING mlt_assert(!"IMPLEMENT")
 
 
+extern "C" void* glXGetProcAddressARB(const GLubyte * procName);
+
 float
 perf_count_to_sec(u64 counter)
 {
@@ -29,6 +31,28 @@ perf_counter()
     }
 
     return tp.tv_nsec;
+}
+
+void
+platform_init(PlatformState* platform, SDL_SysWMinfo* sysinfo)
+{
+    mlt_assert(sysinfo->subsystem == SDL_SYSWM_X11);
+    gtk_init(NULL, NULL);
+    EasyTab_Load(sysinfo->info.x11.display, sysinfo->info.x11.window);
+}
+
+EasyTabResult
+platform_handle_sysevent(PlatformState* platform, SDL_SysWMEvent* sysevent)
+{
+    mlt_assert(sysevent->msg->subsystem == SDL_SYSWM_X11);
+    EasyTabResult res = EasyTab_HandleEvent(&sysevent->msg->msg.x11.event);
+    return res;
+}
+
+void
+platform_event_tick()
+{
+    gtk_main_iteration_do(FALSE);
 }
 
 void
@@ -98,8 +122,18 @@ linux_set_GTK_filter(GtkFileChooser* chooser, GtkFileFilter* filter, FileKind ki
 void
 platform_dialog(char* info, char* title)
 {
-    // IMPL_MISSING;
-    return;
+    platform_cursor_show();
+    GtkWidget *dialog = gtk_message_dialog_new(
+            NULL,
+            (GtkDialogFlags)0,
+            GTK_MESSAGE_INFO,
+            GTK_BUTTONS_OK,
+            "%s",
+            info
+            );
+    gtk_window_set_title(GTK_WINDOW(dialog), title);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
 }
 
 b32
@@ -121,6 +155,30 @@ platform_dialog_yesno(char* info, char* title)
     }
     gtk_widget_destroy(dialog);
     return true;
+}
+
+YesNoCancelAnswer
+platform_dialog_yesnocancel(char* info, char* title)
+{
+    // NOTE: As of 2019-09-23, this function hasn't been tested on Linux.
+
+    platform_cursor_show();
+    GtkWidget *dialog = gtk_message_dialog_new(
+            NULL,
+            (GtkDialogFlags)0,
+            GTK_MESSAGE_QUESTION,
+            GTK_BUTTONS_OK_CANCEL,
+            "%s",
+            info
+            );
+    gtk_window_set_title(GTK_WINDOW(dialog), title);
+    gint answer = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    if ( answer == GTK_RESPONSE_YES )
+        return YesNoCancelAnswer::YES_;
+    if ( answer == GTK_RESPONSE_NO )
+        return YesNoCancelAnswer::NO_;
+    return YesNoCancelAnswer::CANCEL_;
 }
 
 void
@@ -158,6 +216,8 @@ platform_fname_at_config(PATH_CHAR* fname, size_t len)
 void
 platform_fname_at_exe(PATH_CHAR* fname, size_t len)
 {
+    // TODO: Fix this
+#if 0
     u32 bufsize = (u32)len;
     char buffer[MAX_PATH] = {};
     strncpy(buffer, fname, MAX_PATH);
@@ -175,6 +235,7 @@ platform_fname_at_exe(PATH_CHAR* fname, size_t len)
     }
     strncat(fname, "/", len);
     strncat(fname, buffer, len);
+#endif
     return;
 }
 
@@ -225,7 +286,12 @@ platform_open_dialog(FileKind kind)
 void
 platform_open_link(char* link)
 {
-    IMPL_MISSING;
+    // This variant isn't safe.
+    char browser[strlen(link) + 12];            //  2 quotes + 1 space + 8 'xdg-open' + 1 end
+    strcpy(browser, "xdg-open '");
+    strcat(browser, link);
+    strcat(browser, "'");
+    system(browser);
     return;
 }
 
@@ -274,4 +340,41 @@ platform_get_walltime()
     wt.s = time->tm_sec;
     wt.ms = tv.tv_usec / 1000;
     return wt;
+}
+
+void*
+platform_get_gl_proc(char* name)
+{
+    return glXGetProcAddressARB((GLubyte*)name);
+}
+
+void
+platform_deinit(PlatformState* platform)
+{
+
+}
+
+void
+platform_setup_cursor(Arena* arena, PlatformState* platform)
+{
+
+}
+
+v2i
+platform_cursor_get_position(PlatformState* platform)
+{
+    v2i pos;
+
+    SDL_GetMouseState(&pos.x, &pos.y);
+    return pos;
+}
+
+void
+platform_cursor_set_position(PlatformState* platform, v2i pos)
+{
+    SDL_WarpMouseInWindow(platform->window, pos.x, pos.y);
+    // Pending mouse move events will have the cursor close
+    // to where it was before we set it.
+    SDL_FlushEvent(SDL_MOUSEMOTION);
+    SDL_FlushEvent(SDL_SYSWMEVENT);
 }

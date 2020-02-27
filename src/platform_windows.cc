@@ -10,6 +10,11 @@ extern "C" {
 
 static FILE* g_win32_logfile;
 
+struct PlatformSpecific
+{
+    HWND    hwnd;
+    WinDpiApi* win_dpi_api;
+};
 
 #define LOAD_DLL_PROC(dll, name) name##Proc* name = (name##Proc*)GetProcAddress(dll, #name);
 
@@ -24,6 +29,244 @@ GET_DPI_FOR_MONITOR_PROC( GetDpiForMonitorStub )
     *dpiX = 96;
     *dpiY = 96;
     return 0;
+}
+
+void
+platform_init(PlatformState* platform, SDL_SysWMinfo* sysinfo)
+{
+    platform->specific = (PlatformSpecific*)platform_allocate(sizeof(PlatformSpecific));
+    platform->specific->win_dpi_api = (WinDpiApi*)mlt_calloc(1, sizeof(WinDpiApi), "Setup");
+    win_load_dpi_api(platform->specific->win_dpi_api);
+
+    platform->specific->win_dpi_api->SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+
+    mlt_assert(sysinfo->subsystem == SDL_SYSWM_WINDOWS);
+
+    // Handle the case where the window was too big for the screen.
+    HWND hwnd = sysinfo->info.win.window;
+    // TODO: Fullscreen
+    // if (!is_fullscreen) {
+    {
+        RECT res_rect;
+        RECT win_rect;
+        HWND dhwnd = GetDesktopWindow();
+        GetWindowRect(dhwnd, &res_rect);
+        GetClientRect(hwnd, &win_rect);
+
+        platform->specific->hwnd = hwnd;
+
+        i32 snap_threshold = 300;
+        if (win_rect.right != platform->width
+            || win_rect.bottom != platform->height
+            // Also maximize if the size is large enough to "snap"
+            || (win_rect.right + snap_threshold >= res_rect.right
+                && win_rect.left + snap_threshold >= res_rect.left)
+            || win_rect.left < 0
+            || win_rect.top < 0) {
+            // Our prefs weren't right. Let's maximize.
+
+            SetWindowPos(hwnd, HWND_TOP, 20, 20, win_rect.right - 20, win_rect.bottom - 20, SWP_SHOWWINDOW);
+            platform->width = win_rect.right - 20;
+            platform->height = win_rect.bottom - 20;
+            ShowWindow(hwnd, SW_MAXIMIZE);
+        }
+    }
+    // Load EasyTab
+    EasyTabResult easytab_res = EasyTab_Load(platform->specific->hwnd);
+    if (easytab_res != EASYTAB_OK) {
+        milton_log("EasyTab failed to load. Code %d\n", easytab_res);
+    }
+
+}
+
+void
+platform_deinit(PlatformState* platform)
+{
+    EasyTab_Unload();
+}
+
+int
+platform_titlebar_height(PlatformState* p)
+{
+    HWND window = p->specific->hwnd;
+    TITLEBARINFO ti = {};
+
+    ti.cbSize = sizeof(TITLEBARINFO);
+
+    GetTitleBarInfo(window, &ti);
+
+    int height = ti.rcTitleBar.bottom - ti.rcTitleBar.top;
+
+    return height;
+}
+
+void
+platform_setup_cursor(Arena* arena, PlatformState* platform)
+{
+    {  // Load icon (Win32)
+        int si = sizeof(HICON);
+        HINSTANCE handle = GetModuleHandle(nullptr);
+        PATH_CHAR icopath[MAX_PATH] = L"milton_icon.ico";
+        platform_fname_at_exe(icopath, MAX_PATH);
+        HICON icon = (HICON)LoadImageW(NULL, icopath, IMAGE_ICON, /*W*/0, /*H*/0,
+                                       LR_LOADFROMFILE | LR_DEFAULTSIZE | LR_SHARED);
+        if ( icon != NULL ) {
+            SendMessage(platform->specific->hwnd, WM_SETICON, ICON_SMALL, (LPARAM)icon);
+        }
+    }
+
+    // Setup hardware cursor.
+
+#if MILTON_HARDWARE_BRUSH_CURSOR
+    {  // Set brush HW cursor
+        milton_log("Setting up hardware cursor.\n");
+        size_t w = (size_t)GetSystemMetrics(SM_CXCURSOR);
+        size_t h = (size_t)GetSystemMetrics(SM_CYCURSOR);
+
+        size_t arr_sz = (w*h+7) / 8;
+
+        char* andmask = arena_alloc_array(arena, arr_sz, char);
+        char* xormask = arena_alloc_array(arena, arr_sz, char);
+
+        i32 counter = 0;
+        {
+            size_t cx = w/2;
+            size_t cy = h/2;
+            for ( size_t j = 0; j < h; ++j ) {
+                for ( size_t i = 0; i < w; ++i ) {
+                    size_t dist = (i-cx)*(i-cx) + (j-cy)*(j-cy);
+
+                    // 32x32 default;
+                    i64 girth = 3; // girth of cursor in pixels
+                    size_t radius = 8;
+                    if ( w == 32 && h == 32 ) {
+                        // 32x32
+                    }
+                    else if ( w == 64 && h == 64 ) {
+                        girth *= 2;
+                        radius *= 2;
+                    }
+                    else {
+                        milton_log("WARNING: Got an unexpected cursor size of %dx%d. Using 32x32 and hoping for the best.\n", w, h);
+                        w = 32;
+                        h = 32;
+                        cx = 16;
+                        cy = 16;
+                    }
+                    i64 diff        = (i64)(dist - SQUARE(radius));
+                    b32 in_white = diff < SQUARE(girth-0.5f) && diff > -SQUARE(girth-0.5f);
+                    diff = (i64)(dist - SQUARE(radius+1));
+                    b32 in_black = diff < SQUARE(girth) && diff > -SQUARE(girth);
+
+                    size_t idx = j*w + i;
+
+                    size_t ai = idx / 8;
+                    size_t bi = idx % 8;
+
+                    // This code block for windows CreateCursor
+#if 0
+                    if (incircle &&
+                        // Cross-hair effect. Only pixels inside half-radius bands get drawn.
+                        (i > cx-radius/2 && i < cx+radius/2 || j > cy-radius/2 && j < cy+radius/2))
+                    {
+                        if (toggle_black)
+                        {
+                            xormask[ai] |= (1 << (7 - bi));
+                        }
+                        else
+                        {
+                            xormask[ai] &= ~(1 << (7 - bi));
+                            xormask[ai] &= ~(1 << (7 - bi));
+                        }
+                        toggle_black = !toggle_black;
+                    }
+                    else
+                    {
+                        andmask[ai] |= (1 << (7 - bi));
+                    }
+#endif
+                    // SDL code block
+                    if ( in_white ) {
+                        // Cross-hair effect. Only pixels inside half-radius bands get drawn.
+                        /* (i > cx-radius/2 && i < cx+radius/2 || j > cy-radius/2 && j < cy+radius/2)) */
+                        andmask[ai] &= ~(1 << (7 - bi));  // White
+                        xormask[ai] |= (1 << (7 - bi));
+                    }
+                    else if ( in_black ) {
+                        xormask[ai] |= (1 << (7 - bi));  // Black
+                        andmask[ai] |= (1 << (7 - bi));
+
+                    }
+                    else {
+                        andmask[ai] &= ~(1 << (7 - bi));     // Transparent
+                        xormask[ai] &= ~(1 << (7 - bi));
+                    }
+                }
+            }
+        }
+        //platform->hcursor = CreateCursor(/*HINSTANCE*/ 0,
+        //                                      /*xHotSpot*/(int)(w/2),
+        //                                      /*yHotSpot*/(int)(h/2),
+        //                                      /* nWidth */(int)w,
+        //                                      /* nHeight */(int)h,
+        //                                      (VOID*)andmask,
+        //                                      (VOID*)xormask);
+
+        platform->cursor_brush = SDL_CreateCursor((Uint8*)andmask,
+                                                 (Uint8*)xormask,
+                                                 (int)w,
+                                                 (int)h,
+                                                 /*xHotSpot*/(int)(w/2),
+                                                 /*yHotSpot*/(int)(h/2));
+
+    }
+    mlt_assert(platform->cursor_brush != NULL);
+#endif  // MILTON_HARDWARE_BRUSH_CURSOR
+}
+
+EasyTabResult
+platform_handle_sysevent(PlatformState* platform, SDL_SysWMEvent* sysevent)
+{
+    EasyTabResult res = EASYTAB_EVENT_NOT_HANDLED;
+    mlt_assert(sysevent->msg->subsystem == SDL_SYSWM_WINDOWS);
+    res = EasyTab_HandleEvent(sysevent->msg->msg.win.hwnd,
+                              sysevent->msg->msg.win.msg,
+                              sysevent->msg->msg.win.lParam,
+                              sysevent->msg->msg.win.wParam);
+    return res;
+}
+
+void
+platform_event_tick()
+{
+}
+
+void*
+platform_get_gl_proc(char* name)
+{
+    void* func = NULL;
+    func = (void*)wglGetProcAddress(name);
+    if ( func == NULL )  {
+        static HMODULE dll_handle = LoadLibraryA("OpenGL32.dll");
+        if (dll_handle) {
+            func = (void*)GetProcAddress(dll_handle, name);
+        }
+
+        if (func) {
+            milton_log("Loaded %s from OpenGL32.dll\n", name);
+        }
+        else {
+            static const sz msglen = 128;
+            char msg[msglen] = {};
+            snprintf(msg, msglen, "Could not load function %s\nYour GPU does not support Milton :(", name);
+            milton_log(msg);
+            milton_die_gracefully(msg);
+        }
+    }
+    else {
+        milton_log("Loaded %s rom WGL\n", name);
+    }
+    return func;
 }
 
 void
@@ -80,9 +323,11 @@ platform_allocate(size_t size)
 }
 
 void
-platform_deallocate_internal(void* pointer)
+platform_deallocate_internal(void** pointer)
 {
-    VirtualFree(pointer, 0, MEM_RELEASE);
+    mlt_assert(*pointer);
+    VirtualFree(*pointer, 0, MEM_RELEASE);
+    *pointer = NULL;
 }
 
 void
@@ -97,8 +342,8 @@ win32_debug_output(char* str)
 float
 platform_ui_scale(PlatformState* p)
 {
-    WinDpiApi* api = p->win_dpi_api;
-    HMONITOR hmon = MonitorFromWindow(p->hwnd, MONITOR_DEFAULTTONEAREST);
+    WinDpiApi* api = p->specific->win_dpi_api;
+    HMONITOR hmon = MonitorFromWindow(p->specific->hwnd, MONITOR_DEFAULTTONEAREST);
     UINT dpix = 96;
     UINT dpiy = dpix;
     api->GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &dpix, &dpiy);
@@ -125,15 +370,22 @@ void    platform_pixel_to_point(PlatformState* ps, v2l* inout)
 void
 win32_log(char *format, ...)
 {
+    va_list args;
+    va_start(args, format);
+
+    win32_log_args(format, args);
+
+    va_end(args);
+}
+
+void
+win32_log_args(char* format, va_list args)
+{
     char message[ 4096 ];
 
     int num_bytes_written = 0;
 
-    va_list args;
-
     mlt_assert (format != NULL);
-
-    va_start(args, format);
 
     num_bytes_written = _vsnprintf(message, sizeof( message ) - 1, format, args);
 
@@ -144,8 +396,6 @@ win32_log(char *format, ...)
 
         win32_debug_output(message);
     }
-
-    va_end( args );
 }
 
 void
@@ -259,6 +509,22 @@ platform_dialog_yesno(char* info, char* title)
                           MB_YESNO//_In_     UINT    uType
                          );
     return yes == IDYES;
+}
+
+YesNoCancelAnswer
+platform_dialog_yesnocancel(char* info, char* title)
+{
+    platform_cursor_show();
+    i32 answer = MessageBoxA(NULL, //_In_opt_ HWND    hWnd,
+                             (LPCSTR)info, // _In_opt_ LPCTSTR lpText,
+                             (LPCSTR)title,// _In_opt_ LPCTSTR lpCaption,
+                             MB_YESNOCANCEL//_In_     UINT    uType
+                            );
+    if ( answer == IDYES )
+        return YesNoCancelAnswer::YES_;
+    if ( answer == IDNO )
+        return YesNoCancelAnswer::NO_;
+    return YesNoCancelAnswer::CANCEL_;
 }
 
 void
@@ -454,6 +720,44 @@ win32_cleanup_appdata()
     }
 }
 
+static v2i
+win32_client_to_screen(HWND hwnd, v2i client)
+{
+    POINT point = { client.x, client.y };
+    int res = MapWindowPoints(
+        hwnd,
+        HWND_DESKTOP,
+        &point,
+        1
+    );
+
+    if (res == 0) {
+        // TODO: Handle error
+    }
+
+    v2i screen = { point.x, point.y };
+    return screen;
+}
+
+static v2i
+win32_screen_to_client(HWND hwnd, v2i screen)
+{
+    POINT point = { screen.x, screen.y };
+    int res = MapWindowPoints(
+        HWND_DESKTOP,
+        hwnd,
+        &point,
+        1
+    );
+
+    if (res == 0) {
+        // TODO: Handle error
+    }
+
+    v2i client = { point.x, point.y };
+    return client;
+}
+
 void
 platform_open_link(char* link)
 {
@@ -516,6 +820,33 @@ platform_cursor_show()
     while ( ShowCursor(TRUE) < 0 );
 }
 
+void
+platform_cursor_set_position(PlatformState* platform, v2i pos)
+{
+    platform->pointer = pos;
+
+    pos = win32_client_to_screen(platform->specific->hwnd, pos);
+    SetCursorPos(pos.x, pos.y);
+
+    // Pending mouse move events will have the cursor close to where it was before we set it.
+    SDL_FlushEvent(SDL_MOUSEMOTION);
+    SDL_FlushEvent(SDL_SYSWMEVENT);
+}
+
+v2i
+platform_cursor_get_position(PlatformState* platform)
+{
+    v2i point = {};
+    {
+        POINT winPoint = {};
+        GetCursorPos(&winPoint);
+        point = { (i32)winPoint.x, (i32)winPoint.y };
+
+        point = win32_screen_to_client(platform->specific->hwnd, point);
+    }
+    return point;
+}
+
 i32
 platform_monitor_refresh_hz()
 {
@@ -527,7 +858,6 @@ platform_monitor_refresh_hz()
     }
     return hz;
 }
-
 
 void
 str_to_path_char(char* str, PATH_CHAR* out, size_t out_sz)
@@ -542,62 +872,6 @@ str_to_path_char(char* str, PATH_CHAR* out, size_t out_sz)
     }
 }
 
-int
-CALLBACK WinMain(HINSTANCE hInstance,
-                 HINSTANCE hPrevInstance,
-                 LPSTR lpCmdLine,
-                 int nCmdShow)
-{
-    win32_cleanup_appdata();
-    PATH_CHAR path[MAX_PATH] = TO_PATH_STR("milton.log");
-    platform_fname_at_config(path, MAX_PATH);
-    g_win32_logfile = platform_fopen(path, TO_PATH_STR("w"));
-    char cmd_line[MAX_PATH] = {};
-    strncpy(cmd_line, lpCmdLine, MAX_PATH);
-
-    bool is_fullscreen = false;
-    //TODO: proper cmd parsing
-    if ( cmd_line[0] == '-' && cmd_line[1] == 'F' && cmd_line[2] == ' ' ) {
-        is_fullscreen = true;
-        milton_log("Fullscreen is set.\n");
-        for ( size_t i = 0; cmd_line[i]; ++i) {
-            if ( cmd_line[i + 3] == '\0') {
-                cmd_line[i] = '\0';
-                break;
-            }
-            else {
-                cmd_line[i] = cmd_line[i + 3];
-            }
-        }
-    }
-    else if ( cmd_line[0] == '-' && cmd_line[1] == 'F' ) {
-        is_fullscreen = true;
-        milton_log("Fullscreen is set.\n");
-        for ( size_t i = 0; cmd_line[i]; ++i) {
-            if ( cmd_line[i + 2] == '\0') {
-                cmd_line[i] = '\0';
-            }
-            else {
-                cmd_line[i] = cmd_line[i + 2];
-            }
-        }
-    }
-
-    if ( cmd_line[0] == '"' && cmd_line[strlen(cmd_line)-1] == '"' ) {
-        for ( size_t i = 0; cmd_line[i]; ++i ) {
-            cmd_line[i] = cmd_line[i+1];
-        }
-        size_t sz = strlen(cmd_line);
-        cmd_line[sz-1] = '\0';
-    }
-
-    // TODO: eat spaces
-    char* file_to_open = NULL;
-    milton_log("CommandLine is %s\n", cmd_line);
-    if ( strlen(cmd_line) != 0 ) {
-        file_to_open = cmd_line;
-    }
-    milton_main(is_fullscreen, file_to_open);
-}
 
 } // extern "C"
+

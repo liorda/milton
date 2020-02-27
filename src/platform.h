@@ -5,6 +5,7 @@
 #pragma once
 
 #include "common.h"
+#include "memory.h"
 
 #include "system_includes.h"
 #include "utils.h"
@@ -38,7 +39,8 @@ enum LayoutType
 };
 
 struct SDL_Cursor;
-struct WinDpiApi;
+
+struct PlatformSpecific;
 
 struct PlatformState
 {
@@ -47,8 +49,6 @@ struct PlatformState
 
     v2i pointer;
 
-    b32 is_ctrl_down;
-    b32 is_shift_down;
     b32 is_space_down;
     b32 is_pointer_down;
     b32 is_middle_button_down;
@@ -81,11 +81,8 @@ struct PlatformState
 
     SDL_Window* window;
 
-    // Windows hardware cursor
-#if defined(_WIN32)
-    HWND    hwnd;
-    WinDpiApi* win_dpi_api;
-#endif
+    PlatformSpecific* specific;
+
     float ui_scale;
 };
 
@@ -106,19 +103,32 @@ typedef struct TabletState_s TabletState;
 
 int milton_main(bool is_fullscreen, char* file_to_open);
 
+void    platform_init(PlatformState* platform, SDL_SysWMinfo* sysinfo);
+void    platform_deinit(PlatformState* platform);
+
+void    platform_setup_cursor(Arena* arena, PlatformState* platform);
+
+void    platform_cursor_set_position(PlatformState* platform, v2i pos);
+// Get cursor position in client-rect space, whether or not it is within the client rect.
+v2i     platform_cursor_get_position(PlatformState* platform);
+
+EasyTabResult platform_handle_sysevent(PlatformState* platform, SDL_SysWMEvent* sysevent);
+void          platform_event_tick();
+
 void*   platform_allocate(size_t size);
-#define platform_deallocate(pointer) platform_deallocate_internal((pointer)); {(pointer) = NULL;}
-void    platform_deallocate_internal(void* ptr);
+#define platform_deallocate(pointer) platform_deallocate_internal((void**)&(pointer));
+void    platform_deallocate_internal(void** ptr);
 float   platform_ui_scale(PlatformState* p);
 void    platform_point_to_pixel(PlatformState* ps, v2l* inout);
 void    platform_point_to_pixel_i(PlatformState* ps, v2i* inout);
 void    platform_pixel_to_point(PlatformState* ps, v2l* inout);
 
 #define milton_log platform_milton_log
+#define milton_log_args platform_milton_log_args
 void    milton_fatal(char* message);
 void    milton_die_gracefully(char* message);
 
-
+int platform_titlebar_height(PlatformState* p);
 
 void cursor_show();
 void cursor_hide();
@@ -136,25 +146,52 @@ enum FileKind
     #define MAX_PATH PATH_MAX
 #endif
 
-struct PlatformPrefs
+// BACKWARDS-COMPATIBILITY NOTE: Should only grow down.
+struct PlatformSettings
 {
     // Store the window size at the time of quitting.
     i32 width;
     i32 height;
+
     // Last opened file.
     PATH_CHAR last_mlt_file[MAX_PATH];
+
+    // GUI settings.
+    i32 brush_window_left;
+    i32 brush_window_top;
+    i32 brush_window_width;
+    i32 brush_window_height;
+
+    i32 layer_window_left;
+    i32 layer_window_top;
+    i32 layer_window_width;
+    i32 layer_window_height;
 };
 
 // Defined in platform_windows.cc
 FILE*   platform_fopen(const PATH_CHAR* fname, const PATH_CHAR* mode);
 
-// Returns a 0-terminated string with the full path of the target file. NULL if error.
+// Returns a 0-terminated string with the full path of the target file.
+// If the user cancels the operation it returns NULL.
 PATH_CHAR*   platform_open_dialog(FileKind kind);
 PATH_CHAR*   platform_save_dialog(FileKind kind);
 
 void    platform_dialog(char* info, char* title);
 b32     platform_dialog_yesno(char* info, char* title);
 
+// NOTE: These constants end with an underscore in order to prevent issues on
+// macOS where the Objective-C headers define macros `YES` and `NO` as part of
+// the `BOOL` type. Removing the underscores and compiling on macOS causes the
+// compiler to attempt macro expansion on these names resulting in errors.
+enum YesNoCancelAnswer
+{
+    YES_,
+    NO_,
+    CANCEL_,
+};
+YesNoCancelAnswer platform_dialog_yesnocancel(char* info, char* title);
+
+void*   platform_get_gl_proc(char* name);
 void    platform_load_gl_func_pointers();
 
 void    platform_fname_at_exe(PATH_CHAR* fname, size_t len);
@@ -176,6 +213,7 @@ void    platform_open_link(char* link);
 
 WallTime platform_get_walltime();
 
+u64 difference_in_ms(WallTime start, WallTime end);
 
 void    platform_cursor_hide();
 void    platform_cursor_show();

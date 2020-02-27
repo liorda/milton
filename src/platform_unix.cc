@@ -8,19 +8,13 @@
 static FILE* g_unix_logfile;
 
 void
-unix_log(char* format, ...)
+unix_log_args(char* format, va_list args)
 {
-    char message[ 4096 ];
-
+    char message [ 4096] = {0};
     int num_bytes_written = 0;
+    mlt_assert(format != NULL);
 
-    va_list args;
-
-    mlt_assert (format != NULL);
-
-    va_start(args, format);
-
-    num_bytes_written = vsnprintf(message, sizeof( message ) - 1, format, args);
+    num_bytes_written = vsnprintf(message, sizeof(message) - 1, format, args);
 
     if ( num_bytes_written > 0 ) {
         printf("%s", message);
@@ -36,6 +30,22 @@ unix_log(char* format, ...)
             fwrite(message, 1, num_bytes_written, g_unix_logfile);
         }
     }
+}
+
+void
+unix_log(char* format, ...)
+{
+    char message[ 4096 ];
+
+    int num_bytes_written = 0;
+
+    va_list args;
+
+    mlt_assert (format != NULL);
+
+    va_start(args, format);
+
+    unix_log_args(format, args);
 
     va_end( args );
 }
@@ -56,12 +66,6 @@ milton_die_gracefully(char* message)
     milton_log(message);
     exit(EXIT_FAILURE);
 }
-
-#ifdef __linux__
-void        platform_load_gl_func_pointers() {}
-#elif __MACH__
-void        platform_load_gl_func_pointers() {}
-#endif
 
 typedef struct UnixMemoryHeader_s
 {
@@ -87,12 +91,12 @@ platform_allocate(size_t size)
 }
 
 void
-platform_deallocate_internal(void* ptr)
+platform_deallocate_internal(void** ptr)
 {
-    mlt_assert(ptr);
-    u8* begin = (u8*)ptr - sizeof(UnixMemoryHeader);
+    mlt_assert(*ptr);
+    u8* begin = (u8*)(*ptr) - sizeof(UnixMemoryHeader);
     size_t size = *((size_t*)begin);
-    munmap(ptr, size);
+    munmap(*ptr, size);
 }
 
 void
@@ -133,6 +137,12 @@ platform_monitor_refresh_hz()
 }
 
 int
+platform_titlebar_height(PlatformState* p)
+{
+    return 20; // TODO: implement on mac and linux
+}
+
+int
 main(int argc, char** argv)
 {
     char* file_to_open = NULL;
@@ -141,3 +151,5 @@ main(int argc, char** argv)
     }
     milton_main(false, file_to_open);
 }
+
+
