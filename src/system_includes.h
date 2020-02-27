@@ -31,6 +31,7 @@
 #include <SDL_syswm.h>
 
 // Platform independent includes:
+#include <errno.h>
 #include <float.h>
 #include <limits.h>
 #include <math.h>
@@ -45,20 +46,23 @@
 
 #if defined(_WIN32)
 
-#include "SDL_opengl.h"
+#include "gl.h"
 
 #elif defined(__linux__)
 
-#define GL_GLEXT_PROTOTYPES
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include "gl.h"
+
+// #define GL_GLEXT_PROTOTYPES
+// #include <GL/gl.h>
+// #include <GL/glext.h>
 
 #include <dlfcn.h>  // Dynamic library loading.
 
 #elif defined (__MACH__)
 
-#define GL_GLEXT_PROTOTYPES 1
-#include "SDL_opengl.h"
+// #define GL_GLEXT_PROTOTYPES 1
+// #include "SDL_opengl.h"
+#include "gl.h"
 
 #endif // OpenGL includes
 

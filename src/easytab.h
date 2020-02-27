@@ -176,6 +176,8 @@ typedef enum
 {
     EASYTAB_OK = 0,
 
+    EASYTAB_NEEDS_REINIT = 1,
+
     // Errors
     EASYTAB_MEMORY_ERROR           = -1,
     EASYTAB_X11_ERROR              = -2,
@@ -194,7 +196,9 @@ typedef enum
 #define EASYTAB_TRUE                1
 #define EASYTAB_FALSE               0
 #define EASYTAB_BOOL                int
+#define EASYTAB_ABS(val)  ( ((val) >= 0) ? val : -val )
 #endif
+
 
 typedef enum
 {
@@ -290,6 +294,11 @@ typedef enum
         #define CXO_MARGIN      0x8000
         #define CXO_MGNINSIDE   0x4000
         #define CXO_CSRMESSAGES 0x0008 /* 1.1 */
+
+        // Context status values
+        #define CXS_DISABLED  0x0001
+        #define CXS_OBSCURED  0x0002
+        #define CXS_ONTOP     0x0004
 
         #define DVC_NAME        1
         #define DVC_HARDWARE    2
@@ -663,10 +672,19 @@ typedef struct EasyTab_s
     WTMGRDEFCONTEXT   WTMgrDefContext;
     WTMGRDEFCONTEXTEX WTMgrDefContextEx;
 
-    LONG SystemOriginX;
-    LONG SystemOriginY;
-    LONG SystemExtentX;
-    LONG SystemExtentY;
+
+    LONG InputOriginX;
+    LONG InputOriginY;
+
+    LONG InputExtentX;
+    LONG InputExtentY;
+
+    LONG OutputOriginX;
+    LONG OutputOriginY;
+
+    LONG OutputExtentX;
+    LONG OutputExtentY;
+
 
 #endif // WIN32
 } EasyTabInfo;
@@ -973,12 +991,12 @@ EasyTabResult EasyTab_Load_Ex(HWND Window,
         AXIS        RangeY     = {0};
         AXIS        Pressure   = {0};
 
-        EasyTab->WTInfoA(WTI_DDCTXS, 0, &LogContext);
+        EasyTab->WTInfoA(WTI_DEFSYSCTX, 0, &LogContext);
         EasyTab->WTInfoA(WTI_DEVICES, DVC_X, &RangeX);
         EasyTab->WTInfoA(WTI_DEVICES, DVC_Y, &RangeY);
         EasyTab->WTInfoA(WTI_DEVICES, DVC_NPRESSURE, &Pressure);
 
-        LogContext.lcPktData = PACKETDATA; // ??
+        LogContext.lcPktData = PACKETDATA;  // Specify the data we want in each packet.
         LogContext.lcOptions |= CXO_MESSAGES;
         if (MoveCursor) { LogContext.lcOptions |= CXO_SYSTEM; }
         LogContext.lcPktMode = PACKETMODE;
@@ -989,10 +1007,30 @@ EasyTabResult EasyTab_Load_Ex(HWND Window,
         LogContext.lcPktRate = DesiredPktRate;
         #endif
 
-        EasyTab->SystemOriginX = LogContext.lcSysOrgX;
-        EasyTab->SystemOriginY = LogContext.lcSysOrgY;
-        EasyTab->SystemExtentX = LogContext.lcSysExtX;
-        EasyTab->SystemExtentY = LogContext.lcSysExtY;
+        EasyTab->InputOriginX = LogContext.lcInOrgX;
+        EasyTab->InputOriginY = LogContext.lcInOrgY;
+        EasyTab->InputExtentX = LogContext.lcInExtX;
+        EasyTab->InputExtentY = LogContext.lcInExtY;
+
+        LogContext.lcOutOrgX = 0;
+        LogContext.lcOutExtX = LogContext.lcInExtX;
+
+        LogContext.lcOutOrgY = 0;
+        LogContext.lcOutExtY = -LogContext.lcInExtY;
+
+
+
+        LogContext.lcOutOrgX = 0;
+        LogContext.lcOutExtX = LogContext.lcInExtX;
+
+        LogContext.lcOutOrgY = 0;
+        LogContext.lcOutExtY = -LogContext.lcInExtY;
+
+
+        EasyTab->OutputOriginX = GetSystemMetrics(SM_XVIRTUALSCREEN); // LogContext.lcOutOrgX;
+        EasyTab->OutputOriginY = GetSystemMetrics(SM_YVIRTUALSCREEN); // LogContext.lcOutOrgY;
+        EasyTab->OutputExtentX = GetSystemMetrics( SM_CXVIRTUALSCREEN );
+        EasyTab->OutputExtentY = GetSystemMetrics( SM_CYVIRTUALSCREEN );
 
         if (TrackingMode == EASYTAB_TRACKING_MODE_RELATIVE)
         {
@@ -1067,42 +1105,63 @@ EasyTabResult EasyTab_HandleEvent(HWND Window, UINT Message, LPARAM LParam, WPAR
 
     PACKET PacketBuffer[EASYTAB_PACKETQUEUE_SIZE] = {0};
 
-    // Bring our context to the top.
-    if (EasyTab && EasyTab->WTOverlap)
-    {
-       EasyTab->WTOverlap(EasyTab->Context, TRUE);
-    }
-
     EasyTab->NumPackets = 0;
     if (Message == WT_PACKET)
     {
+        #define EASYTAB_SIGN(val) ( ((val) >= 0) ? 1 : -1 )
+
         int NumPackets = EasyTab->WTPacketsGet(EasyTab->Context, EASYTAB_PACKETQUEUE_SIZE, PacketBuffer);
-        POINT PointBuffer;
 
         if ( NumPackets ) { EasyTab->Buttons = 0; }
         for (int i = 0; i < NumPackets; ++i)
         {
-            // wintab y axis goes up, windows' y axis goes down!
-            PointBuffer.x = PacketBuffer[i].pkX;
-            PointBuffer.y = EasyTab->SystemExtentY - PacketBuffer[i].pkY;
+            float x;
+            float y;
+            if (EASYTAB_SIGN(EasyTab->OutputExtentX) == EASYTAB_SIGN(EasyTab->InputExtentX))
+            {
+                x = ((PacketBuffer[i].pkX - EasyTab->InputOriginX) * EASYTAB_ABS(EasyTab->OutputExtentX) / (float)EASYTAB_ABS(EasyTab->InputExtentX)) + EasyTab->OutputOriginX;
+            }
+            else
+            {
+                x = EASYTAB_ABS(EasyTab->OutputExtentX) * (EASYTAB_ABS(EasyTab->InputExtentX) - (PacketBuffer[i].pkX - EasyTab->InputOriginX)) / (float)EASYTAB_ABS(EasyTab->InputExtentX) +  EasyTab->OutputOriginX;
+            }
 
-            ScreenToClient(Window, &PointBuffer);
-            EasyTab->PosX[i] = PointBuffer.x;
-            EasyTab->PosY[i] = PointBuffer.y;
+            if (EASYTAB_SIGN(EasyTab->OutputExtentX) == EASYTAB_SIGN(EasyTab->InputExtentX))
+            {
+                y = ((PacketBuffer[i].pkY - EasyTab->InputOriginY) * EASYTAB_ABS(EasyTab->OutputExtentY) / (float)EASYTAB_ABS(EasyTab->InputExtentY)) + EasyTab->OutputOriginY;
+            }
+            else
+            {
+                y = EASYTAB_ABS(EasyTab->OutputExtentY) * (EASYTAB_ABS(EasyTab->InputExtentY) - (PacketBuffer[i].pkY - EasyTab->InputOriginY)) / (float)EASYTAB_ABS(EasyTab->InputExtentY) +  EasyTab->OutputOriginY;
+            }
+
+
+            POINT point = { (long)x, (long)y };
+
+            ScreenToClient(Window, &point);
+
+            EasyTab->PosX[i] = point.x;
+            EasyTab->PosY[i] = point.y;
 
             EasyTab->Pressure[i] = (float)PacketBuffer[i].pkNormalPressure / (float)EasyTab->MaxPressure;
 
             // Setting the Buttons variable if any of the packets had a button pushed
-            EasyTab->Buttons |= PacketBuffer[i].pkButtons;			
+            EasyTab->Buttons |= PacketBuffer[i].pkButtons;
         }
 
-        // Fill the orientation of the last packet in the buffer.
-        EasyTab->Orientation.Azimuth = PacketBuffer[NumPackets - 1].pkOrientation.orAzimuth;
-        EasyTab->Orientation.Altitude = PacketBuffer[NumPackets - 1].pkOrientation.orAltitude;
-        EasyTab->Orientation.Twist = PacketBuffer[NumPackets - 1].pkOrientation.orTwist;
+        // Fill the ergtation of the last packet in the buffer.
+        if (NumPackets)
+        {
+            EasyTab->Orientation.Azimuth = PacketBuffer[NumPackets - 1].pkOrientation.orAzimuth;
+            EasyTab->Orientation.Altitude = PacketBuffer[NumPackets - 1].pkOrientation.orAltitude;
+            EasyTab->Orientation.Twist = PacketBuffer[NumPackets - 1].pkOrientation.orTwist;
+        }
+
         EasyTab->NumPackets = NumPackets;
 
         result = EASYTAB_OK;
+
+        #undef EASYTAB_SIGN
     }
     else if (Message == WT_PROXIMITY &&
              (HCTX)WParam == EasyTab->Context)
@@ -1127,14 +1186,42 @@ EasyTabResult EasyTab_HandleEvent(HWND Window, UINT Message, LPARAM LParam, WPAR
         // see https://msdn.microsoft.com/en-us/library/windows/desktop/ms646274.aspx
         BOOL Active = (WParam & 0xFFFF) != 0;
 
-        // Enable / Disable the context when focus changes (e.g. our window is minimized)
-        // and move our context to the bottom with WTOverlap when we lose focus.
         // see http://www.wacomeng.com/windows/docs/NotesForTabletAwarePCDevelopers.html#_Toc274818945
         EasyTab->WTEnable(EasyTab->Context, Active);
-        if (!Active)
+        result = EASYTAB_OK;
+    }
+    else if (Message == WT_CTXOVERLAP && EasyTab->Context)
+    {
+        if (LParam & CXS_OBSCURED)
         {
-            EasyTab->WTOverlap(EasyTab->Context, FALSE);
+            // We want to be on top even when obscured, because of overlayed
+            // windows that don't steal focus.
+            EasyTab->WTOverlap(EasyTab->Context, true);
         }
+        result = EASYTAB_OK;
+    }
+    else if (Message == WT_CTXUPDATE)
+    {
+        HCTX UpdatedContext = (HCTX)WParam;
+        result = EASYTAB_OK;
+    }
+    else if (Message == WT_CTXOPEN)
+    {
+        HCTX NewContext = (HCTX)WParam;
+        EasyTab->Context = NewContext;
+        result = EASYTAB_OK;
+    }
+    else if (Message == WT_CTXCLOSE)
+    {
+        if ((HCTX)WParam == EasyTab->Context)
+        {
+            EasyTab->Context = 0;
+        }
+        result = EASYTAB_OK;
+    }
+    else if (Message == WT_INFOCHANGE)
+    {
+        result = EASYTAB_NEEDS_REINIT;
     }
 
     return result;

@@ -6,6 +6,9 @@
 
 #include "common.h"
 
+
+#define PI 3.141592654f
+
 template<typename T>
 struct Vector2
 {
@@ -33,8 +36,18 @@ typedef Vector2<i32>     v2i;
 typedef Vector2<i64>     v2l;
 typedef Vector2<float>   v2f;
 #define operator2_scalar(OP) \
-        template<typename T> \
-        Vector2<T> operator OP (const Vector2<T>& v, T f) \
+template<typename T> \
+Vector2<T> operator OP (const Vector2<T>& v, T f) \
+{                       \
+                        \
+    Vector2<T> r = {    \
+        v.x OP f,       \
+        v.y OP f,       \
+    };                  \
+    return r;           \
+} \
+template<typename T> \
+Vector2<T> operator OP (T f, const Vector2<T>& v) \
 {                       \
                         \
     Vector2<T> r = {    \
@@ -64,12 +77,24 @@ typedef Vector2<float>   v2f;
     return a;               \
 }
 
+#define operator2_assign_scalar(OP) \
+    template<typename T> \
+    Vector2<T>& \
+    operator OP (Vector2<T>& a, T b) \
+{                           \
+    a.x OP b;            \
+    a.y OP b;            \
+    return a;               \
+}
+
 operator2_vector(+)
 operator2_vector(-)
 operator2_assign(+=)
 operator2_assign(-=)
 operator2_scalar(*)
 operator2_scalar(/)
+operator2_assign_scalar(*=)
+operator2_assign_scalar(/=)
 
 template<typename Type>
 bool
@@ -199,4 +224,3 @@ operator == (const Vector4<Type>& a, const Vector4<Type>& b)
 
 typedef Vector4<float>  v4f;
 typedef Vector4<i32>    v4i;
-

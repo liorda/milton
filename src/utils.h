@@ -43,9 +43,16 @@ v2f v2l_to_v2f(v2l p);
 
 v2f v2i_to_v2f(v2i p);
 
+v2i v2l_to_v2i(v2l p);
+
+v2l v2i_to_v2l(v2i p);
+
 #define kPi 3.14152654f
 
 #define DOT(a, b)  ((a).x * (b).x + (a).y * (b).y)
+
+#define I64_MAX 9223372036854775807L
+#define I64_MIN -9223372036854775807L
 
 f32 magnitude(v2f a);
 
@@ -56,6 +63,12 @@ i32 manhattan_distance(v2i a, v2i b);
 f32 deegrees_to_radians(int d);
 
 f32 radians_to_degrees(f32 r);
+
+f32 norm(v2f v);
+
+v2f normalized (v2f v);
+
+f32 clamp(f32 value, f32 min, f32 max);
 
 #define SQUARE(x) ((x) * (x))
 
@@ -144,6 +157,7 @@ char*       str_trim_to_last_slash(char* str);
 void        utf16_to_utf8_simple(char* , char* );
 void        utf16_to_utf8_simple(wchar_t* utf16_name, char* utf8_name);
 
+
 struct Bitmap
 {
     i32 width;
@@ -193,3 +207,7 @@ swap(T& a, T& b)
 
 u64 hash(char* string, size_t len);
 
+template<typename T>
+T lerp(T begin, T end, float t) {
+    return begin * (1.0f - t) + (end * t);
+}

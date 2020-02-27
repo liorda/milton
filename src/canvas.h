@@ -39,7 +39,7 @@ struct Layer
     StrokeList strokes;
     char    name[MAX_LAYER_NAME_LEN];
 
-    i32     flags;  // LayerFlags[
+    i32     flags;  // LayerFlags
 
     float alpha;
 
@@ -56,10 +56,25 @@ enum LayerEffectType
     LayerEffectType_COUNT,
 };
 
-// IMPORTANT: CanvasView needs to be a flat structure.
-//            Changing it means changing the file format,
-//            because the whole struct is saved to the mlt file
+#pragma pack (push, 1)
+
+// IMPORTANT: CanvasView needs to be a flat structure
+//            because the whole struct is saved to the mlt file.
+//            It should only grow down.
 struct CanvasView
+{
+    u32 size;                   // Size of struct
+    v2i screen_size;            // Size in pixels
+    i64 scale;                  // Zoom
+    v2i zoom_center;            // In pixels
+    v2l pan_center;             // In canvas scale
+    v3f background_color;
+    i32 working_layer_id;
+    f32 angle;                  // Rotation
+};
+
+// Used to load older MLT files.
+struct CanvasViewPreV9
 {
     v2i screen_size;            // Size in pixels
     i64 scale;                  // Zoom
@@ -68,9 +83,8 @@ struct CanvasView
     v3f background_color;
     i32 working_layer_id;
     i32 num_layers;
+    u8 padding[4];
 };
-
-// Used to load older MLT files.
 struct CanvasViewPreV4
 {
     v2i screen_size;            // Size in pixels
@@ -84,8 +98,7 @@ struct CanvasViewPreV4
     i32 num_layers;
 };
 
-
-b32     is_eraser(v4f color);
+#pragma pack(pop)
 
 
 v2l     canvas_to_raster (CanvasView* view, v2l canvas_point);
@@ -94,7 +107,11 @@ v2l     raster_to_canvas (CanvasView* view, v2l raster_point);
 b32     stroke_point_contains_point (v2l p0, i64 r0, v2l p1, i64 r1);  // Does point p0 with radius r0 contain point p1 with radius r1?
 Rect    bounding_box_for_stroke (Stroke* stroke);
 Rect    bounding_box_for_last_n_points (Stroke* stroke, i32 last_n);
-Rect    canvas_rect_to_raster_rect (CanvasView* view, Rect canvas_rect);
+
+Rect    raster_to_canvas_bounding_rect(CanvasView* view, i32 x, i32 y, i32 w, i32 h, i64 scale);
+Rect    canvas_to_raster_bounding_rect(CanvasView* view, Rect rect);
+
+void    reset_transform_at_origin(v2l* pan_center, i64* scale, f32* angle);
 
 // ---- Layer functions.
 

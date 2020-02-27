@@ -8,7 +8,7 @@ cd $MYDIR
 #
 # This really should become an ExternalProject_Add inside the CMakelists.txt
 # and windows, linux, and osx should all use the same approach for building cmake.
-pushd third_party/SDL2-2.0.3
+pushd third_party/SDL2-2.0.8
     CMAKE_CMD='cmake
     -D ARTS:BOOL=OFF
     -D ALSA:BOOL=OFF
@@ -19,11 +19,12 @@ pushd third_party/SDL2-2.0.3
     -D CMAKE_INSTALL_PREFIX="../linux64"
     -G "Unix Makefiles"
     -D CMAKE_DEBUG_POSTFIX="_debug"
+    -D SDL_STATIC_PIC:BOOL=ON
     '
 
     mkdir -p build/linrelease
     pushd build/linrelease
-        eval $CMAKE_CMD -D CMAKE_BUILD_TYPE="Release" ../.. || exit 1
+        eval $CMAKE_CMD -D CMAKE_BUILD_TYPE="Debug" ../.. || exit 1
         make -j install || exit 1
     popd
 popd

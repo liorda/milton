@@ -14,7 +14,7 @@
 size_t
 get_system_RAM()
 {
-   return (size_t)SDL_GetSystemRAM() * 1024 * 1024;
+    return (size_t)SDL_GetSystemRAM() * 1024 * 1024;
 }
 
 v2l
@@ -22,6 +22,13 @@ v2f_to_v2l(v2f p)
 {
     return v2l{(i64)p.x, (i64)p.y};
 }
+
+v2i
+v2l_to_v2i(v2l p)
+{
+    return v2i{ (i32)p.x, (i32)p.y };
+}
+
 
 v2f
 v2l_to_v2f(v2l p)
@@ -36,6 +43,12 @@ v2l_to_v2f(v2l p)
     #pragma warning(pop)
     #endif
     return v2f{(f32)p.x, (f32)p.y};
+}
+
+v2l
+v2i_to_v2l(v2i p)
+{
+    return v2l{p.x, p.y};
 }
 
 v2f
@@ -55,6 +68,12 @@ magnitude(v2f a)
     return sqrtf(DOT(a, a));
 }
 
+i64
+magnitude(v2l a)
+{
+    return sqrtf((float)DOT(a, a));
+}
+
 f32
 distance(v2f a, v2f b)
 {
@@ -68,8 +87,8 @@ distance(v2f a, v2f b)
 i32
 manhattan_distance(v2i a, v2i b)
 {
-   i32 dist = MLT_ABS(a.x - b.x) + MLT_ABS(a.y - b.y);
-   return dist;
+    i32 dist = MLT_ABS(a.x - b.x) + MLT_ABS(a.y - b.y);
+    return dist;
 }
 
 f32
@@ -85,6 +104,28 @@ radians_to_degrees(f32 r)
     return (180 * r) / kPi;
 }
 
+f32
+norm(v2f v)
+{
+    f32 result = sqrtf(v.x * v.x + v.y * v.y);
+    return result;
+}
+
+v2f
+normalized (v2f v)
+{
+    v2f result = v / norm(v);
+    return result;
+}
+
+f32
+clamp(f32 value, f32 min, f32 max)
+{
+    return min(max(value, min), max);
+}
+
+
+
 // Could be called a signed area. `orientation(a, b, c) / 2` is the area of the
 // triangle.
 // If positive, c is to the left of ab. Negative: right of ab. 0 if
@@ -98,10 +139,10 @@ orientation(v2f a, v2f b, v2f c)
 b32
 is_inside_triangle(v2f point, v2f a, v2f b, v2f c)
 {
-   b32 is_inside =
-           (orientation(a, b, point) <= 0) &&
-           (orientation(b, c, point) <= 0) &&
-           (orientation(c, a, point) <= 0);
+    b32 is_inside =
+            (orientation(a, b, point) <= 0) &&
+            (orientation(b, c, point) <= 0) &&
+            (orientation(c, a, point) <= 0);
     return is_inside;
 }
 
@@ -245,12 +286,12 @@ rect_union(Rect a, Rect b)
 b32
 rect_intersects_rect(Rect a, Rect b)
 {
-   b32 intersects = true;
-   if ( a.left > b.right || b.left > a.right
-        || a.top > b.bottom || b.top > a.bottom ) {
-      intersects = false;
-   }
-   return intersects;
+    b32 intersects = true;
+    if ( a.left > b.right || b.left > a.right ||
+         a.top > b.bottom || b.top > a.bottom ) {
+        intersects = false;
+    }
+    return intersects;
 }
 
 Rect
@@ -273,17 +314,17 @@ rect_intersect(Rect a, Rect b)
 Rect
 rect_stretch(Rect rect, i32 width)
 {
-   Rect stretched = rect;
-   // Make the raster limits at least as wide as a block
-   if ( stretched.bottom - stretched.top < width ) {
-      stretched.top -= width / 2;
-      stretched.bottom += width / 2;
-   }
-   if ( stretched.right - stretched.left < width ) {
-      stretched.left -= width / 2;
-      stretched.right += width / 2;
-   }
-   return stretched;
+    Rect stretched = rect;
+    // Make the raster limits at least as wide as a block
+    if ( stretched.bottom - stretched.top < width ) {
+        stretched.top -= width / 2;
+        stretched.bottom += width / 2;
+    }
+    if ( stretched.right - stretched.left < width ) {
+        stretched.left -= width / 2;
+        stretched.right += width / 2;
+    }
+    return stretched;
 }
 
 Rect
@@ -374,10 +415,10 @@ Rect
 rect_without_size()
 {
     Rect rect;
-    rect.left = INT_MAX;
-    rect.right = INT_MIN;
-    rect.top = INT_MAX;
-    rect.bottom = INT_MIN;
+    rect.left = I64_MAX;
+    rect.right = I64_MIN;
+    rect.top = I64_MAX;
+    rect.bottom = I64_MIN;
     return rect;
 }
 
@@ -406,7 +447,7 @@ is_rect_within_rect(Rect a, Rect b)
          || (a.bottom > b.bottom) ) {
         return false;
     }
-   return true;
+    return true;
 }
 
 Rect
@@ -424,7 +465,7 @@ rect_from_xywh(i32 x, i32 y, i32 w, i32 h)
 void
 utf16_to_utf8_simple(char* , char* )
 {
-   // Nothing needs to be done
+    // Nothing needs to be done
 }
 
 void
@@ -433,11 +474,11 @@ utf16_to_utf8_simple(wchar_t* utf16_name, char* utf8_name)
     for ( wchar_t* iter = utf16_name;
           *iter!='\0';
           ++iter ) {
-      if ( *iter <= 128 ) {
-         *utf8_name++ = (char)*iter;
-      }
-   }
-   *utf8_name='\0';
+        if ( *iter <= 128 ) {
+            *utf8_name++ = (char)*iter;
+        }
+    }
+    *utf8_name='\0';
 }
 
 wchar_t*
@@ -478,4 +519,24 @@ hash(char* string, size_t len)
         h += h>>5;
     }
     return h;
+}
+
+u64
+difference_in_ms(WallTime start, WallTime end)
+{
+    // Note: There is some risk of overflow here, but at the time of my
+    // writing this we are only using this for animations, where things won't
+    // explode.
+
+    u64 diff = end.ms - start.ms;
+    if (end.s > start.s) {
+        diff += 1000 * (end.s - start.s);
+    }
+    if (end.m > start.m) {
+        diff += 1000 * 60 * (end.m - start.s);
+    }
+    if (end.h > start.h) {
+        diff += 1000 * 60 * 60 * (end.h - start.h);
+    }
+    return diff;
 }

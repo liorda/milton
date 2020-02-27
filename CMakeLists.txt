@@ -10,27 +10,12 @@ add_executable(shadergen
   src/shadergen.cc
 )
 
-set(SDL2DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL2-2.0.3)
+set(SDL2DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL2-2.0.8)
 
 FILE (GLOB ShaderSources src/*.glsl third_party/*.glsl)
 
 add_executable(Milton WIN32 MACOSX_BUNDLE
-  src/milton.cc
-  src/memory.cc
-  src/gui.cc
-  src/persist.cc
-  src/color.cc
-  src/canvas.cc
-  src/profiler.cc
-  src/gl_helpers.cc
-  src/localization.cc
-  src/renderer.cc
-  src/utils.cc
-  src/vector.cc
-  src/sdl_milton.cc
-  src/StrokeList.cc
-  src/third_party_libs.cc
-
+  src/unity.cc
   src/shaders.gen.h
 )
 
@@ -41,17 +26,6 @@ target_include_directories(Milton PRIVATE
 )
 
 # Handle various switches, build types etc.
-
-## Helps to know that we're compiling using cmake in milton_configuration.h
-add_definitions(-DIS_USING_CMAKE=1)
-
-if(TRY_GL2)
-  message(STATUS "Compiling for OpenGL2.1")
-  add_definitions(-DCMAKE_TRY_GL2=1)
-elseif(TRY_GL3)
-  message(STATUS "Compiling for OpenGL3.2")
-  add_definitions(-DCMAKE_TRY_GL3=1)
-endif()
 
 ## Default build type to Release
 if(NOT CMAKE_BUILD_TYPE)
@@ -71,13 +45,6 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 message(STATUS "Building ${CMAKE_BUILD_TYPE}")
 
-# Platform specific stuff
-if(WIN32)
-  target_sources(Milton PRIVATE
-    src/platform_windows.cc
-  )
-endif()
-
 if(UNIX)
   set(UnixCFlags
     -std=c++11
@@ -92,11 +59,12 @@ if(UNIX)
     -fno-strict-aliasing
     -fno-omit-frame-pointer
     -Wno-extern-c-compat
-    -Werror
+    #-Werror
     )
-  target_sources(Milton PRIVATE
-    src/platform_unix.cc
-  )
+  if (APPLE)
+      set(UnixCFlags "${UnixCFlags}" -ObjC++)
+  endif()
+
   target_compile_options(shadergen PRIVATE
     ${UnixCFlags})
   target_compile_options(Milton PRIVATE
@@ -104,10 +72,6 @@ if(UNIX)
 endif()
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
-
-  target_sources(Milton PRIVATE
-    src/platform_linux.cc
-  )
 
   find_package(OpenGL REQUIRED)
   find_package(GTK2 2.6 REQUIRED gtk)
@@ -143,8 +107,8 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     ${X11_LIBRARIES}
     ${OPENGL_LIBRARIES}
     ${XINPUT_LIBRARY}
-    ${SDL2DIR}/build/linux64/lib/libSDL2main.a
-    ${SDL2DIR}/build/linux64/lib/libSDL2.a
+    ${SDL2DIR}/build/linux64/lib/libSDL2maind.a
+    ${SDL2DIR}/build/linux64/lib/libSDL2d.a
     ${CMAKE_THREAD_LIBS_INIT}
     ${CMAKE_DL_LIBS}
     )
@@ -155,9 +119,6 @@ else()
 endif()
 
 if(APPLE)
-  target_sources(Milton PRIVATE
-    src/platform_mac.mm
-  )
   target_link_libraries(Milton
     "-framework OpenGL"
   )
